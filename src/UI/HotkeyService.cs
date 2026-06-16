@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using Godot;
 
@@ -91,9 +92,19 @@ internal static class HotkeyService
         var entry = Activator.CreateInstance(entryType);
         SetProp(entry, "Key", ModConfigKey);
         SetProp(entry, "Label", "Toggle Shop Blacklist");
-        SetProp(entry, "LabelKey", "merchant_blacklist.hotkey.toggle.label");
+        SetProp(entry, "Labels", new Dictionary<string, string>
+        {
+            ["en"]  = "Toggle Shop Blacklist",
+            ["zhs"] = "切换商店黑名单",
+            ["zht"] = "切換商店黑名單",
+        });
         SetProp(entry, "Description", "Hotkey to open/close the shop blacklist panel.");
-        SetProp(entry, "DescriptionKey", "merchant_blacklist.hotkey.toggle.desc");
+        SetProp(entry, "Descriptions", new Dictionary<string, string>
+        {
+            ["en"]  = "Hotkey to open/close the shop blacklist panel.",
+            ["zhs"] = "用于打开 / 关闭商店黑名单面板的热键。",
+            ["zht"] = "用於開啟 / 關閉商店黑名單面板的熱鍵。",
+        });
         SetProp(entry, "Type", Enum.Parse(typeEnum, "KeyBind"));
         SetProp(entry, "DefaultValue", (long)Key.F10);
 
@@ -116,6 +127,24 @@ internal static class HotkeyService
 
         var entries = Array.CreateInstance(entryType, 1);
         entries.SetValue(entry, 0);
+
+        var displayNames = new Dictionary<string, string>
+        {
+            ["en"]  = "Shop Blacklist",
+            ["zhs"] = "商店黑名单",
+            ["zht"] = "商店黑名單",
+        };
+
+        // 优先使用支持本地化 displayNames 的重载
+        var registerLocalized = apiType.GetMethod(
+            "Register",
+            new[] { typeof(string), typeof(string), typeof(Dictionary<string, string>), entries.GetType() });
+        if (registerLocalized != null)
+        {
+            registerLocalized.Invoke(null, new object[] { MerchantBlacklistMod.ModId, "Shop Blacklist", displayNames, entries });
+            MerchantBlacklistLog.Info($"Registered hotkey to ModConfig with i18n displayNames (current keycode={ToggleKeyCode}).");
+            return;
+        }
 
         var register = apiType.GetMethod("Register", new[] { typeof(string), typeof(string), entries.GetType() });
         if (register == null)
@@ -191,8 +220,8 @@ internal static class HotkeyService
         {
             opts = Activator.CreateInstance(optsType);
             SetProp(opts, "Id", RitsuHotkeyId);
-            SetProp(opts, "DisplayName", "Toggle Shop Blacklist");
-            SetProp(opts, "Description", "Open or close the shop blacklist panel.");
+            SetProp(opts, "DisplayName", LocalizedHotkeyName());
+            SetProp(opts, "Description", LocalizedHotkeyDesc());
             SetProp(opts, "Category", "MerchantBlacklist");
             SetProp(opts, "MarkInputHandled", true);
             SetProp(opts, "SuppressWhenTextInputFocused", true);
@@ -219,6 +248,30 @@ internal static class HotkeyService
             MerchantBlacklistLog.Warn($"RuntimeHotkeyService.Register failed: {ex.Message}");
         }
     }
+
+    // ── 语言探测：跟随 LocManager.Instance.Language（zh* 视为中文）─────────
+
+    private static string CurrentLang()
+    {
+        try
+        {
+            var locType = Type.GetType("MegaCrit.Sts2.Core.Localization.LocManager")
+                       ?? FindType("MegaCrit.Sts2.Core.Localization.LocManager");
+            var instance = locType?.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+            var lang = locType?.GetProperty("Language")?.GetValue(instance) as string;
+            if (string.IsNullOrEmpty(lang)) return "en";
+            lang = lang.ToLowerInvariant();
+            if (lang.StartsWith("zh")) return "zhs";
+            return "en";
+        }
+        catch { return "en"; }
+    }
+
+    private static string LocalizedHotkeyName()
+        => CurrentLang() == "zhs" ? "切换商店黑名单" : "Toggle Shop Blacklist";
+
+    private static string LocalizedHotkeyDesc()
+        => CurrentLang() == "zhs" ? "用于打开 / 关闭商店黑名单面板的热键。" : "Open or close the shop blacklist panel.";
 
     // ── 工具：keycode_with_modifiers → ritsulib binding 文本 ─────────────
 
